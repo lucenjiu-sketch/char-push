@@ -2,31 +2,23 @@ import { buildPushHTTPRequest } from "@pushforge/builder";
 
 export default {
   async fetch(request, env) {
-    const url = new URL(request.url);
-
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: corsHeaders() });
     }
 
-    if (url.pathname === "/subscribe" && request.method === "POST") {
-      const subscription = await request.json();
-      await env.PUSH_KV.put(subscription.endpoint, JSON.stringify(subscription));
-      return json({ ok: true });
-    }
-
-    if (url.pathname === "/push" && request.method === "POST") {
+    try {
       const body = await request.json();
       const subscription = body.push_subscription;
-
-      if (!subscription) return json({ error: "no subscription" }, 400);
 
       if (body.action === "sync_context") {
         return json({ success: true, message: "数据同步成功" });
       }
 
-      const privateJWK = vapidKeysToJWK(env.VAPID_PUBLIC_KEY, env.VAPID_PRIVATE_KEY);
+      if (body.action === "test_push") {
+        if (!subscription) return json({ error: "no subscription" }, 400);
 
-      try {
+        const privateJWK = vapidKeysToJWK(env.VAPID_PUBLIC_KEY, env.VAPID_PRIVATE_KEY);
+
         const req = await buildPushHTTPRequest({
           privateJWK,
           subscription,
@@ -41,12 +33,12 @@ export default {
         });
         await fetch(req.endpoint, { method: "POST", headers: req.headers, body: req.body });
         return json({ success: true, message: "测试推送成功" });
-      } catch (e) {
-        return json({ error: e.message }, 500);
       }
-    }
 
-    return json({ ok: false, message: "not found" }, 404);
+      return json({ error: "未知的 action" }, 400);
+    } catch (e) {
+      return json({ error: e.message }, 500);
+    }
   },
 };
 
